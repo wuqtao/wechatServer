@@ -24,23 +24,30 @@ func init(){
 
 func main(){
 	flag.Parse()
-	conf,err := config.LoadConfig(configFile)
-	if err != nil{
-		log.Panicln("config file error:"+err.Error())
+
+	//测试配置文件是否正确
+	if test{
+		err := config.TestConfig(configFile)
+		if err != nil{
+			fmt.Println(err.Error())
+			return
+		}
+		fmt.Println("config file is right")
+		return
 	}
 
-	file,err := os.OpenFile(conf.LogFile,os.O_CREATE | os.O_APPEND | os.O_RDWR,0666)
+	conf,err :=config.ParseConfig(configFile)
+	if err != nil{
+		fmt.Println("parse config error "+err.Error())
+		return
+	}
+
+	//初始化log
+	file,err := os.OpenFile(conf.Server.LogFile,os.O_CREATE | os.O_APPEND | os.O_RDWR,0666)
 	if err != nil{
 		log.Println("open log file error "+err.Error())
 	}else{
 		log.SetOutput(file)
-	}
-
-	config.GetConfigMan().SetConfig(conf)
-	//测试配置文件成功
-	if test{
-		fmt.Println("config file is right")
-		return
 	}
 
 	wechatman,err := wechat.BuildWechatMan(conf.GetAheadTime(),conf.GetLoopTime(),conf.GetWechatConfigs()...)

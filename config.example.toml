@@ -1,35 +1,33 @@
 #这是一个toml配置示例
-#微信过期时间更新单位秒(s)
-AheadTime = 600
 
-#循环检测微信accesstoken是否过期的间隔秒(s)
-LoopTime = 60
+[server]                                        #服务器配置信息
+    logFile = "d:\\wechatman.log"               #日志文件地址
+    port = 9999                                 #服务器监听端口
 
-#日志文件地址
-LogFile = "/tmp/wechatman.log"
+[redis]                                         #redis 链接信息
+    host = "127.0.0.1:3379"
+    user = "root"
+    password = "user"
+    database = 1
 
-#服务器监听端口
-Port = 9999
+[security]
+    apiSignKey = "wechatServerSignKey"              #请求接口的校验签名key
+    adminIpList = ["127.0.0.1"]                     #管理员ip地址，该地址可以请求配置文件重载等高权限操作
+    adminToken = "adminToken"                       #管理员请求token
+    useIpWhiteList = false                          #是否使用接口ip白名单
+    ipList = ["127.0.0.1"]                          #普通请求的ip白名单
 
-#管理员ip地址，该地址可以请求配置文件重载等高权限操作,不配置的话，自动添加127.0.0.1到名单
-AdminIpList = ["127.0.0.1"]
-AdminToken = "adminToken"
+[wechatPublic]                                           #微信公众号配置
+    appID = "wx55305d4efcc3d10c"                         #微信公众号或者小程序的appid
+    appSecret = "f2aa62de4ce4b524b93e44c5199eed80"       #appsecret
+    token = "wechatman"                                  #查询accessToken时提供的认证参数
+    notifyUrl = ["http://localhost"]                     #该微信accessToken更新后，会请求该url列表中的地址
+    encodeAesKey = ""                                    #消息加解密秘钥
+    aheadTime = 600                                      #微信过期时间更新单位秒(s)
+    loopTime = 60                                        #循环检测微信accesstoken是否过期的间隔秒(s)
 
-#请求查询和更新时是否使用ip白名单，不启用则接受来自所有ip的查询请求
-UseIpWhiteList = false
+[miniProgram]                                            #微信小程序配置
 
-#普通请求的ip白名单,如果启用ip白名单，但是白名单列表为空，自动添加127.0.0.1到白名单
-IpList = ["127.0.0.1"]
 
-#下面是微信公众号或者小程序的相关配置，支持配置多个，token为查询accetoken时带过来的token参数,例如getaccesstoken?id=&token=
-[[Wechat]]
-"AppID" = ""                 #微信公众号或者小程序的appid
-"AppSecret" = ""             #appsecret
-"Token" = "wechatman"        #查询accessToken时提供的认证参数
-"NotifyUrl" = []             #该微信accessToken更新后，会请求该url列表中的地址,url需要带上http或者https协议头
+[wechatWeb]                                              #微信开发平台网站应用
 
-[[Wechat]]
-"AppID" = ""
-"AppSecret" = ""
-"Token" = "wechatman"
-"NotifyUrl" = []

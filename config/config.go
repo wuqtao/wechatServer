@@ -3,129 +3,95 @@ package config
 import (
 	"github.com/BurntSushi/toml"
 	"io/ioutil"
-	"errors"
+	"log"
 	"sync"
-	"github.com/dbldqt/wechatServer/wechat"
 )
+var config *Config
 
-var configMan ConfigMan
-var once sync.Once
+func GetConfig() *Config{
+	if config != nil{
+		return config
+	}
+	log.Fatalln("config not init")
+	return nil
+}
+
+type ServerConf struct {
+	LogFile string		`toml:"logFile"`
+	Port	int			`toml:"port"`
+}
+
+type RedisConf struct {
+	Host string 		`toml:"host"`
+	User string			`toml:"user"`
+	Password string		`toml:"password"`
+	Database int		`toml:"database"`
+}
+
+type SecurityConf struct {
+	ApiSignKey string	`toml:"apiSignKey"`
+	AdminIpList []string 	`toml:"adminIpList"`
+	AdminToken	string		`toml:"adminToken"`
+	UseIpWhiteList bool		`toml:"useIpWhiteList"`
+	IpList []string			`toml:"ipList"`
+}
+
+type WechatPublicConf struct {
+	AppID string		`toml:"appID"`
+	AppSecret string	`toml:"appSecret"`
+	Token string		`toml:"token"`
+	NotifyUrl string	`toml:"notifyUrl"`
+	EncodeAesKey string	`toml:"encodeAesKey"`
+
+	AheadTimeTime int64	`toml:"aheadTime"`
+	LoopTime int	`toml:"loopTime"`
+}
+
+type MiniProgramConf struct {
+
+}
+
+type WechatWebConf struct {
+
+}
 
 type Config struct {
 	sync.RWMutex
-	Port int
-	Wechat []*wechat.WechatConfig
-	AheadTime int
-	LoopTime int
-	LogFile string
-	UseIpWhiteList bool
-	IpList []string
-	AdminIpList []string
-	AdminToken string
+	Server *ServerConf 				`toml:"server"`
+	Redis *RedisConf				`toml:"redis"`
+	Security *SecurityConf			`toml:"security"`
+	WechatPublic *WechatPublicConf	`toml:"wechatPublic"`
+	MiniProgram *MiniProgramConf	`toml:"miniProgram"`
+	WechatWeb *WechatWebConf		`toml:"wechatWeb"`
 }
-
-func (conf *Config) GetPort() int{
-	defer conf.RUnlock()
-	conf.RLock()
-	return conf.Port
-}
-
-func (conf *Config) GetWechatConfigs() []*wechat.WechatConfig{
-	defer conf.RUnlock()
-	conf.RLock()
-	return conf.Wechat
-}
-
-func (conf *Config) GetAheadTime() int{
-	defer conf.RUnlock()
-	conf.RLock()
-	return conf.AheadTime
-}
-
-func (conf *Config) GetLoopTime() int{
-	defer conf.RUnlock()
-	conf.RLock()
-	return conf.LoopTime
-}
-
-func (conf *Config) GetLogFile() string{
-	defer conf.RUnlock()
-	conf.RLock()
-	return conf.LogFile
-}
-
-func (conf *Config) GetIpList() []string{
-	defer conf.RUnlock()
-	conf.RLock()
-	return conf.IpList
-}
-
-func (conf *Config) GetAdminIpList() []string{
-	defer conf.RUnlock()
-	conf.RLock()
-	return conf.AdminIpList
-}
-
-func (conf *Config) GetAdminToken() string{
-	defer conf.RUnlock()
-	conf.RLock()
-	return conf.AdminToken
-}
-
-type ConfigMan struct {
-	sync.RWMutex
-	config *Config
-}
-
-func (cm *ConfigMan) GetConfig() *Config{
-	return cm.config
-}
-
-func (cm *ConfigMan) SetConfig(newConfig *Config){
-	cm.Lock()
-	cm.config = newConfig
-	cm.Unlock()
-}
-
-func GetConfigMan() *ConfigMan{
-	once.Do(func() {
-		configMan = ConfigMan{}
-	})
-	return &configMan
-}
-
-func LoadConfig(configFile string) (*Config,error){
-	config := Config{}
-	fileContent,err := ioutil.ReadFile(configFile)
+/**
+	解析配置文件
+ */
+func ParseConfig(filePath string) (*Config,error){
+	fileData,err := ioutil.ReadFile(filePath)
 	if err != nil{
 		return nil,err
 	}
-	if _,err := toml.Decode(string(fileContent),&config);err != nil{
+
+	if _,err = toml.Decode(string(fileData),&config);err != nil{
 		return nil,err
 	}
-	config.Lock()
-	if config.LoopTime <= 0{
-		return nil,errors.New("looptime must be great than 0")
+	return config,nil
+}
+/**
+	用于测试配置文件
+ */
+func TestConfig(filePath string) error{
+	fileData,err := ioutil.ReadFile(filePath)
+	if err != nil{
+		log.Fatalln("read config error "+err.Error())
+		return err
 	}
-	if config.AheadTime >= 7200 || config.AheadTime < 0{
-		return nil,errors.New("aheadTime must be between 0 and 7200")
+	var tmpConfig Config
+	if _,err = toml.Decode(string(fileData),&tmpConfig);err != nil{
+		log.Fatalln("decode config error "+err.Error())
+		return err
 	}
-	if config.Port <= 0{
-		return nil,errors.New("port must be great than 0")
-	}
-
-	if len(config.Wechat) == 0{
-		return nil,errors.New("must config one or more wechat info")
-	}
-
-	if config.UseIpWhiteList && (len(config.IpList) == 0 || config.IpList == nil){
-		config.IpList = append(config.IpList,"127.0.0.1")
-	}
-
-	if len(config.AdminIpList) == 0{
-		config.AdminIpList = append(config.AdminIpList,"127.0.0.1")
-	}
-	config.Unlock()
-	return &config,nil
+	return nil
 }
 

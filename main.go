@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/dbldqt/wechatServer/config"
+	"github.com/dbldqt/wechatServer/wechat"
 	"github.com/valyala/fasthttp"
 	"log"
 	"os"
 	"strconv"
 	"time"
-	"github.com/dbldqt/wechatServer/config"
-	"github.com/dbldqt/wechatServer/wechat"
 )
 var configFile string
 var test bool
@@ -18,7 +18,6 @@ var test bool
 func init(){
 	flag.StringVar(&configFile,"conf","./config.toml","assign the config file path")
 	flag.BoolVar(&test,"test",false,"is test config file")
-
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 }
 
@@ -50,20 +49,9 @@ func main(){
 		log.SetOutput(file)
 	}
 
-	wechatman,err := wechat.BuildWechatMan(conf.GetAheadTime(),conf.GetLoopTime(),conf.GetWechatConfigs()...)
-	if err != nil{
-		log.Panicln("get wehcatman error "+err.Error())
-	}
-	err = wechatman.Run()
-	if err != nil{
-		log.Panicln("wechatman run error "+err.Error())
-	}
+	wechat.NewWechatPublicApp(conf.WechatPublic).Start()
 
-	err = fasthttp.ListenAndServe(":"+strconv.Itoa(conf.GetPort()),requesthandler)
-	if err != nil{
-		log.Panicln("fasthttp error "+err.Error())
-		return
-	}
+	fasthttp.ListenAndServe(":"+strconv.Itoa(conf.Server.Port),requesthandler)
 }
 
 type Result struct{
@@ -81,33 +69,29 @@ func requesthandler(ctx *fasthttp.RequestCtx){
 	}
 	switch(string(ctx.Path())){
 		case "/query":
-			if !ctx.QueryArgs().Has("appid") || !ctx.QueryArgs().Has("token"){
-				ctx.Response.SetBody([]byte("param not enough"))
-				return
-			}
+			//if !ctx.QueryArgs().Has("appid") || !ctx.QueryArgs().Has("token"){
+			//	ctx.Response.SetBody([]byte("param not enough"))
+			//	return
+			//}
 
-			if !QueryIpAuth(ctx.RemoteIP().String()){
-				ctx.Response.SetBody([]byte("ip not in white list"))
-				return
-			}
+			//if !QueryIpAuth(ctx.RemoteIP().String()){
+			//	ctx.Response.SetBody([]byte("ip not in white list"))
+			//	return
+			//}
 
-			appid := ctx.QueryArgs().Peek("appid")
-			token := ctx.QueryArgs().Peek("token")
+			//token := ctx.QueryArgs().Peek("token")
 
 			result := Result{
 				ServerTime:time.Now().Unix(),
 			}
 
-			wechatman,err := wechat.GetWechatMan()
+			wehcatApp := wechat.GetWechatPublicApp()
+			accessToken,expireAt,err := wehcatApp.GetAccessToken()
 			if err != nil{
-				log.Panicln("get wechatman error "+err.Error())
-			}
-			accessToken,expireAt,err := wechatman.QueryAccessToken(string(appid),string(token))
-			if err != nil{
-				log.Println(string(appid)+"query accesstoken error "+err.Error())
+				log.Println(ctx.RemoteIP().String()+"query accesstoken error "+err.Error())
 				result.Msg = err.Error()
 			}else{
-				log.Println(string(appid)+"query accesstoken success")
+				log.Println(ctx.RemoteIP().String()+"query accesstoken success")
 				result.Msg = "success"
 			}
 
@@ -123,110 +107,109 @@ func requesthandler(ctx *fasthttp.RequestCtx){
 
 			break
 		case "/update":
-			if !ctx.QueryArgs().Has("appid") || !ctx.QueryArgs().Has("token"){
-				ctx.Response.SetBody([]byte("param not enough"))
-				return
-			}
-
-			if !QueryIpAuth(ctx.RemoteIP().String()){
-				ctx.Response.SetBody([]byte("ip not in white list"))
-				return
-			}
-
-			appid := ctx.QueryArgs().Peek("appid")
-			token := ctx.QueryArgs().Peek("token")
-
-			wechatman,err := wechat.GetWechatMan()
-			if err != nil{
-				log.Panicln("get wechatman error "+err.Error())
-				return
-			}
-			_,_,err = wechatman.QueryAccessToken(string(appid),string(token))
-			if err != nil{
-				log.Println(string(appid)+"update accesstoken error "+err.Error())
-				ctx.Response.SetBody([]byte("{\"msg\":\""+err.Error()+"\"}"))
-				return
-			}
-			log.Println(string(appid)+"update success")
-			wechatman.ForceRefreshAccessToken(string(appid))
-			ctx.Response.SetBody([]byte("{\"msg\":\"success\"}"))
-
-			break
+			//if !ctx.QueryArgs().Has("appid") || !ctx.QueryArgs().Has("token"){
+			//	ctx.Response.SetBody([]byte("param not enough"))
+			//	return
+			//}
+			//
+			//if !QueryIpAuth(ctx.RemoteIP().String()){
+			//	ctx.Response.SetBody([]byte("ip not in white list"))
+			//	return
+			//}
+			//
+			//appid := ctx.QueryArgs().Peek("appid")
+			//token := ctx.QueryArgs().Peek("token")
+			//
+			//wechatman,err := wechat.GetWechatMan()
+			//if err != nil{
+			//	log.Panicln("get wechatman error "+err.Error())
+			//	return
+			//}
+			//_,_,err = wechatman.QueryAccessToken(string(appid),string(token))
+			//if err != nil{
+			//	log.Println(string(appid)+"update accesstoken error "+err.Error())
+			//	ctx.Response.SetBody([]byte("{\"msg\":\""+err.Error()+"\"}"))
+			//	return
+			//}
+			//log.Println(string(appid)+"update success")
+			//wechatman.ForceRefreshAccessToken(string(appid))
+			//ctx.Response.SetBody([]byte("{\"msg\":\"success\"}"))
+			//
+			//break
 	case "/reload":
-		if !ctx.QueryArgs().Has("token"){
-			ctx.Response.SetBody([]byte("param not enough"))
-			return
-		}
-
-		if !ReloadIpAuth(ctx.RemoteIP().String()){
-			ctx.Response.SetBody([]byte("ip not in white list"))
-			return
-		}
-		token := string(ctx.QueryArgs().Peek("token"))
-		adminToken := config.GetConfigMan().GetConfig().GetAdminToken()
-		if string(token) != adminToken{
-			ctx.Response.SetBody([]byte("token error"))
-			return
-		}
-
-		conf,err := config.LoadConfig(configFile)
-		if err != nil{
-			ctx.Response.SetBody([]byte(err.Error()))
-			return
-		}
-
-		config.GetConfigMan().SetConfig(conf)
-		wechatMan,err := wechat.GetWechatMan()
-		if err != nil {
-			log.Panicln("get wechatman error "+err.Error())
-			ctx.Response.SetBody([]byte(err.Error()))
-			return
-		}
-
-		go func (){
-			err = wechatMan.Rebuild(conf.GetAheadTime(),conf.GetLoopTime(),conf.GetWechatConfigs()...)
-			if err != nil{
-				log.Panicln("rebuild error "+err.Error())
-			}
-			log.Println("reload success")
-		}()
-		ctx.Response.SetBody([]byte("config is reloading"))
-		break
+		//if !ctx.QueryArgs().Has("token"){
+		//	ctx.Response.SetBody([]byte("param not enough"))
+		//	return
+		//}
+		//
+		//if !ReloadIpAuth(ctx.RemoteIP().String()){
+		//	ctx.Response.SetBody([]byte("ip not in white list"))
+		//	return
+		//}
+		//token := string(ctx.QueryArgs().Peek("token"))
+		//adminToken := config.GetConfigMan().GetConfig().GetAdminToken()
+		//if string(token) != adminToken{
+		//	ctx.Response.SetBody([]byte("token error"))
+		//	return
+		//}
+		//
+		//conf,err := config.LoadConfig(configFile)
+		//if err != nil{
+		//	ctx.Response.SetBody([]byte(err.Error()))
+		//	return
+		//}
+		//
+		//config.GetConfigMan().SetConfig(conf)
+		//wechatMan,err := wechat.GetWechatMan()
+		//if err != nil {
+		//	log.Panicln("get wechatman error "+err.Error())
+		//	ctx.Response.SetBody([]byte(err.Error()))
+		//	return
+		//}
+		//
+		//go func (){
+		//	err = wechatMan.Rebuild(conf.GetAheadTime(),conf.GetLoopTime(),conf.GetWechatConfigs()...)
+		//	if err != nil{
+		//		log.Panicln("rebuild error "+err.Error())
+		//	}
+		//	log.Println("reload success")
+		//}()
+		//ctx.Response.SetBody([]byte("config is reloading"))
+		//break
 	default:
 			ctx.Response.SetBody([]byte("no this route"))
 	}
 }
 
-func QueryIpAuth(ip string) bool{
-	conf := config.GetConfigMan().GetConfig()
-	conf.RLock()
-	if !conf.UseIpWhiteList{
-		return true
-	}
-	iplist := conf.GetIpList()
-	for _,ipSet := range iplist{
-		if ipSet == ip {
-			conf.RUnlock()
-			return true
-		}
-	}
-	conf.RUnlock()
-	log.Println(ip+"not in ip list")
-	return false
-}
-
-func ReloadIpAuth(ip string) bool{
-	conf := config.GetConfigMan().GetConfig()
-	conf.RLock()
-	iplist := conf.GetAdminIpList()
-	for _,ipSet := range iplist{
-		if ipSet == ip {
-			conf.RUnlock()
-			return true
-		}
-	}
-	conf.RUnlock()
-	log.Println(ip+"not in admin ip list")
-	return false
-}
-
+//func QueryIpAuth(ip string) bool{
+//	conf := config.GetConfigMan().GetConfig()
+//	conf.RLock()
+//	if !conf.UseIpWhiteList{
+//		return true
+//	}
+//	iplist := conf.GetIpList()
+//	for _,ipSet := range iplist{
+//		if ipSet == ip {
+//			conf.RUnlock()
+//			return true
+//		}
+//	}
+//	conf.RUnlock()
+//	log.Println(ip+"not in ip list")
+//	return false
+//}
+//
+//func ReloadIpAuth(ip string) bool{
+//	conf := config.GetConfigMan().GetConfig()
+//	conf.RLock()
+//	iplist := conf.GetAdminIpList()
+//	for _,ipSet := range iplist{
+//		if ipSet == ip {
+//			conf.RUnlock()
+//			return true
+//		}
+//	}
+//	conf.RUnlock()
+//	log.Println(ip+"not in admin ip list")
+//	return false
+//}

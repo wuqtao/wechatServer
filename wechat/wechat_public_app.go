@@ -1,12 +1,21 @@
 package wechat
 
 import (
-	"github.com/dbldqt/wechatServer/config"
+	"errors"
 	"github.com/dbldqt/wechatSDK/mp/accesstoken"
-	"github.com/dbldqt/wechatServer/redis"
+	"github.com/dbldqt/wechatServer/config"
+	"github.com/dbldqt/wechatServer/redisClient"
+	"github.com/gomodule/redigo/redis"
 	"log"
+	"math/rand"
 	"strconv"
 	"time"
+)
+
+const (
+	UpdateTokenLockKey = "updateTokenLock"
+	TokenHashKey = "token"
+	TokenExpireHashKey = "expireAt"
 )
 var wechatPulicApp *WechatPublicApp
 
@@ -15,86 +24,93 @@ type WechatPublicApp struct {
 }
 
 func NewWechatPublicApp(config *config.WechatPublicConf) *WechatPublicApp{
+	wechatPulicApp = &WechatPublicApp{
+		config:config,
+	}
+	return wechatPulicApp
+}
 
+func GetWechatPublicApp() *WechatPublicApp{
+	return wechatPulicApp
 }
 
 //使用一个redis hash结构存储微信的accessToken,key accesstoken val expireAt val isLock bool lockedAt val
 func (self *WechatPublicApp)getAccessTokenKey() string{
-	return "accessTokenkey"+self.config.AppID
+	return "accessToken"+self.config.AppID
 }
 
-func (self *WechatPublicApp)GetAccessToken() string{
-	result,err := redis.GetRedisClient().HGetAll(self.getAccessTokenKey()).Result()
+func (self *WechatPublicApp)GetAccessToken() (string,int64,error){
+	//先查询是否被锁定
+	conn := redisClient.GetConn()
+	defer conn.Close()
+	retMap,err := redis.StringMap(conn.Do("hgetall",self.getAccessTokenKey()))
 	if err != nil{
-		log.Println("query accesstoken from redis error "+err.Error())
-		return ""
+		log.Println("query accessToken from redis error "+err.Error())
+		return "",0,err
 	}
-	token,ok := result["accessToken"]
-	if ok{
-		return token
+	token,ok := retMap[TokenHashKey];if !ok{
+		log.Println("query accessToken from redis token not exist")
+		return "",0,errors.New("query accessToken from redis token not exist")
 	}
-	return ""
+	expireAt,ok := retMap[TokenExpireHashKey];if !ok{
+		log.Println("query accessToken from redis expireAt not exist")
+		return "",0,errors.New("query accessToken from redis expireAt not exist")
+	}
+	expireAtInt,err := strconv.ParseInt(expireAt,10,64)
+	if err != nil{
+		log.Println("parse expire error")
+		return token,0,err
+	}
+	return token,expireAtInt,nil
 }
 
 func (self *WechatPublicApp)Start(){
 	go func(){
 		for{
-			result,err := redis.GetRedisClient().HGetAll(self.getAccessTokenKey()).Result()
-			if err != nil{
-				log.Println("query accesstoken from redis error "+err.Error())
-				continue
-			}
-			duration,_ := time.ParseDuration(strconv.Itoa(self.config.LoopTime))
-			expiredAt,ok := result["expiredAt"]
-			if !ok {
-				self.UpdateAccessToken()
-			}
-			expireInt64,_ := strconv.ParseInt(expiredAt,10,64)
-			if time.Unix(expireInt64,0).Before(time.Now()){
-				self.UpdateAccessToken()
-			}
-			time.Sleep(duration)
+			self.checkAccessTokenExpire()
+			time.Sleep(time.Duration(self.config.LoopTime)*time.Second)
 		}
-
 	}()
 }
+
 func (self *WechatPublicApp)checkAccessTokenExpire(){
-	//先查询是否被锁定
-	result,err := redis.GetRedisClient().HGetAll(self.getAccessTokenKey()).Result()
+	token,expireAt,err := self.GetAccessToken()
 	if err != nil{
-		log.Println("query accesstoken from redis error "+err.Error())
+		log.Println("check accessToken error "+err.Error())
+		self.UpdateAccessToken()
 		return
 	}
-	token,ok := result["token"]
-	isLook,ok1 := result["isLock"]
-
-	if ok{
-
+	if token == "" || time.Now().Unix() >= expireAt{
+		self.UpdateAccessToken()
 	}
 }
-func (self *WechatPublicApp)UpdateAccessToken(){
-	//上锁再进行更新
-	_,err := redis.GetRedisClient().HMSet(self.getAccessTokenKey(),map[string]interface{}{
-		"isLock":true,
-		"lockedAt":time.Now().Unix(),
-	}).Result()
-	if err != nil{
-		log.Println("lock redis error "+err.Error())
-		return
-	}
+
+func (self *WechatPublicApp)setAccessToken(){
 	token,expireIn,err := accesstoken.GetAccessToken(self.config.AppID,self.config.AppSecret)
 	if err != nil{
 		log.Println("request accesstoken error "+err.Error())
 		return
 	}
-
+	conn := redisClient.GetConn()
+	defer conn.Close()
 	expireAt := time.Now().Unix()+int64(expireIn)-self.config.AheadTimeTime
-	redis.GetRedisClient().HMSet(self.getAccessTokenKey(),map[string]interface{}{
-		"token":token,								//存储accessToken
-		"expiredAt":expireAt,						//token过期时间
-		"isLock":false,								//用于分布式并发更新控制
-		"lockedAt":0,								//锁定时间，1分钟不更新则任务超时，其他服务可以重新锁定并更新accessToken
-	})
+	_,err = conn.Do("hmset",self.getAccessTokenKey(),TokenHashKey,token,TokenExpireHashKey,expireAt)
+	if err != nil{
+		log.Println("set accessToken error "+err.Error())
+		return
+	}
+}
+
+func (self *WechatPublicApp)UpdateAccessToken(){
+	rand.Seed(time.Now().Unix())
+	lockNum := rand.Int()
+	//上锁再进行更新,锁过期时间2分钟
+	if !redisClient.Lock(UpdateTokenLockKey,lockNum,120){
+		log.Println("lock update token lock failed")
+		return
+	}
+	self.setAccessToken()
+	redisClient.UnLock(UpdateTokenLockKey,lockNum)
 }
 
 
